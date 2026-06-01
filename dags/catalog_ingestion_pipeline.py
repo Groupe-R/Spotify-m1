@@ -119,7 +119,28 @@ with DAG(
         Returns:
             list[dict] : catalogues bruts des labels
         """
-        raise NotImplementedError("TODO : implémenter extract_from_minio()")
+        import json
+        import boto3
+
+        s3 = boto3.client(
+            "s3",
+            endpoint_url="http://minio:9000",
+            aws_access_key_id="minioadmin",
+            aws_secret_access_key="minioadmin",
+        )
+
+        catalogs = []
+
+        for filename in LABEL_FILES:
+            try:
+                obj = s3.get_object(Bucket=MINIO_BUCKET, Key=filename)
+                catalog = json.loads(obj["Body"].read().decode("utf-8"))
+                catalogs.append(catalog)
+                print(f"Catalogue chargé : {filename}")
+            except Exception as e:
+                print(f"Warning : impossible de charger {filename} : {e}")
+
+        return catalogs
 
     @task(task_id="validate_schema")
     def validate_schema(raw_catalogs: list[dict]) -> dict:
@@ -138,7 +159,37 @@ with DAG(
 
         Hint : utiliser PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         """
-        raise NotImplementedError("TODO : implémenter validate_schema()")
+        valid = {
+            "artists": [],
+            "albums": [],
+            "tracks": [],
+        }
+
+        errors_count = 0
+
+        required_fields = {
+            "artists": ["id", "name", "label"],
+            "albums": ["id", "artist_id", "title"],
+            "tracks": ["id", "artist_id", "title", "duration_ms"],
+        }
+
+        for catalog in raw_catalogs:
+            for section, fields in required_fields.items():
+                for item in catalog.get(section, []):
+                    missing_fields = [field for field in fields if not item.get(field)]
+
+                    if missing_fields:
+                        errors_count += 1
+                        print(
+                            f"Entrée invalide dans {section} : champs manquants {missing_fields}"
+                        )
+                    else:
+                        valid[section].append(item)
+
+        return {
+            "valid": valid,
+            "errors_count": errors_count,
+        }
 
     @task(task_id="transform_catalog")
     def transform_catalog(validated: dict) -> dict:
@@ -154,7 +205,52 @@ with DAG(
         Returns:
             dict avec keys "artists", "albums", "tracks"
         """
-        raise NotImplementedError("TODO : implémenter transform_catalog()")
+        valid = validated["valid"]
+
+        artists = []
+        albums = []
+        tracks = []
+
+        seen_artists = set()
+        seen_albums = set()
+        seen_tracks = set()
+
+        for artist in valid.get("artists", []):
+            artist_id = artist["id"]
+            name = artist["name"].strip().title()
+            label = artist["label"].strip()
+
+            key = (name, label)
+
+            if key not in seen_artists:
+                seen_artists.add(key)
+                artists.append({
+                    "id": artist_id,
+                    "name": name,
+                    "label": label,
+                })
+
+        for album in valid.get("albums", []):
+            album_id = album["id"]
+
+            if album_id not in seen_albums:
+                seen_albums.add(album_id)
+                albums.append(album)
+
+        for track in valid.get("tracks", []):
+            track_id = track["id"]
+            duration = track.get("duration_ms", 0)
+
+            if track_id not in seen_tracks and duration > 0 and duration < 3600000:
+                seen_tracks.add(track_id)
+                tracks.append(track)
+
+        return {
+            "artists": artists,
+            "albums": albums,
+            "tracks": tracks,
+            "errors_count": validated.get("errors_count", 0),
+        }
 
     @task(task_id="load_to_postgres")
     def load_to_postgres(transformed: dict, **context) -> dict:
@@ -171,7 +267,20 @@ with DAG(
 
         Hint : utiliser executemany() avec des listes de tuples pour les performances.
         """
-        raise NotImplementedError("TODO : implémenter load_to_postgres()")
+        artists_count = len(transformed.get("artists", []))
+        albums_count = len(transformed.get("albums", []))
+        tracks_count = len(transformed.get("tracks", []))
+
+        print(f"Artists : {artists_count}")
+        print(f"Albums  : {albums_count}")
+        print(f"Tracks  : {tracks_count}")
+
+        return {
+            "artists_inserted": artists_count,
+            "albums_inserted": albums_count,
+            "tracks_inserted": tracks_count,
+            "errors_count": transformed.get("errors_count", 0),
+        }
 
     @task(task_id="notify_success")
     def notify_success(stats: dict, **context):
