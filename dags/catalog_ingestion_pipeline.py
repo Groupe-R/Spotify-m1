@@ -267,21 +267,122 @@ with DAG(
 
         Hint : utiliser executemany() avec des listes de tuples pour les performances.
         """
-        artists_count = len(transformed.get("artists", []))
-        albums_count = len(transformed.get("albums", []))
-        tracks_count = len(transformed.get("tracks", []))
+        hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+        conn = hook.get_conn()
+        cursor = conn.cursor()
 
-        print(f"Artists : {artists_count}")
-        print(f"Albums  : {albums_count}")
-        print(f"Tracks  : {tracks_count}")
+        artists = transformed.get("artists", [])
+        albums = transformed.get("albums", [])
+        tracks = transformed.get("tracks", [])
+        errors_count = transformed.get("errors_count", 0)
 
-        return {
-            "artists_inserted": artists_count,
-            "albums_inserted": albums_count,
-            "tracks_inserted": tracks_count,
-            "errors_count": transformed.get("errors_count", 0),
-        }
+        artists_sql = """
+            INSERT INTO artists (
+                id, name, label, updated_at
+            )
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (id)
+            DO UPDATE SET
+                name = EXCLUDED.name,
+                label = EXCLUDED.label,
+                updated_at = NOW()
+        """
 
+        albums_sql = """
+            INSERT INTO albums (
+                id, artist_id, title, release_year, total_tracks
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (id)
+            DO UPDATE SET
+                artist_id = EXCLUDED.artist_id,
+                title = EXCLUDED.title,
+                release_year = EXCLUDED.release_year,
+                total_tracks = EXCLUDED.total_tracks
+        """
+
+        tracks_sql = """
+            INSERT INTO tracks (
+                id, album_id, artist_id, title, duration_ms,
+                genre, bpm, explicit, audio_file_path, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (id)
+            DO UPDATE SET
+                album_id = EXCLUDED.album_id,
+                artist_id = EXCLUDED.artist_id,
+                title = EXCLUDED.title,
+                duration_ms = EXCLUDED.duration_ms,
+                genre = EXCLUDED.genre,
+                bpm = EXCLUDED.bpm,
+                explicit = EXCLUDED.explicit,
+                audio_file_path = EXCLUDED.audio_file_path,
+                updated_at = NOW()
+        """
+
+        try:
+            artist_rows = [
+                (
+                    artist["id"],
+                    artist["name"],
+                    artist.get("label"),
+                )
+                for artist in artists
+            ]
+
+            album_rows = [
+                (
+                    album["id"],
+                    album["artist_id"],
+                    album["title"],
+                    album.get("release_year"),
+                    album.get("total_tracks"),
+                )
+                for album in albums
+            ]
+
+            track_rows = [
+                (
+                    track["id"],
+                    track.get("album_id"),
+                    track["artist_id"],
+                    track["title"],
+                    track["duration_ms"],
+                    track.get("genre"),
+                    track.get("bpm"),
+                    track.get("explicit", False),
+                    track.get("audio_file_path"),
+                )
+                for track in tracks
+            ]
+
+            cursor.executemany(artists_sql, artist_rows)
+            cursor.executemany(albums_sql, album_rows)
+            cursor.executemany(tracks_sql, track_rows)
+
+            conn.commit()
+
+            stats = {
+                "artists_inserted": len(artist_rows),
+                "albums_inserted": len(album_rows),
+                "tracks_inserted": len(track_rows),
+                "errors_count": errors_count,
+            }
+
+            print(f"Artists upserted : {stats['artists_inserted']}")
+            print(f"Albums upserted  : {stats['albums_inserted']}")
+            print(f"Tracks upserted  : {stats['tracks_inserted']}")
+            print(f"Errors count     : {stats['errors_count']}")
+
+            return stats
+
+        except Exception as e:
+            conn.rollback()
+            raise e
+
+        finally:
+            cursor.close()
+            conn.close()
     @task(task_id="notify_success")
     def notify_success(stats: dict, **context):
         """
