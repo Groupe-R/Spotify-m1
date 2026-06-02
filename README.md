@@ -52,7 +52,7 @@ python3 -m pytest tests/unit/test_transformations.py -v
 Tests de structure Airflow, à lancer dans le conteneur Airflow :
 ```Bash
 docker exec -it spotify-m1-airflow-worker-1 bash
-cd /opt/airflow
+
 pytest tests/structure/test_dag_structure.py -v
 ```
 
