@@ -69,7 +69,6 @@ def _target_date(context) -> str:
     return context["data_interval_start"].strftime("%Y-%m-%d")
 
 
-
 with DAG(
     dag_id="aggregation_pipeline",
     default_args=DEFAULT_ARGS,
@@ -86,10 +85,12 @@ with DAG(
         external_dag_id="streaming_events_pipeline",
         external_task_id=None,     # attend la fin du DAGRun complet
         allowed_states=["success"],
+        failed_states=["failed"],
         timeout=3600,
         poke_interval=60,
         mode="reschedule",
     )
+
 
     @task(task_id="compute_top_tracks")
     def compute_top_tracks(**context) -> list:
@@ -393,13 +394,7 @@ with DAG(
     artist_stats = compute_artist_stats()
     p2p_metrics  = compute_p2p_metrics()
 
-    # wait_for_events >> [top_tracks, artist_stats, p2p_metrics]
-    update_task = update_aggregates(
-    top_tracks,
-    artist_stats,
-    p2p_metrics
-)
-
-    [top_tracks, artist_stats, p2p_metrics] >> update_task
+    wait_for_events >> [top_tracks, artist_stats, p2p_metrics]
+    
     update_aggregates(top_tracks, artist_stats, p2p_metrics)
  

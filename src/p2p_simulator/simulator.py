@@ -13,7 +13,7 @@ Usage :
 TODO Phase 1 :  Compléter _generate_listening_event() et _publish_to_redis()
 TODO Phase 2 :  Activer _publish_to_kafka() et le mode fraude
 """
-
+import psycopg2
 import argparse
 import json
 import logging
@@ -41,6 +41,13 @@ logger = logging.getLogger("p2p_simulator")
 # ─────────────────────────────────────────────────────────────
 
 REDIS_URL = "redis://localhost:6379/1"
+POSTGRES_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "dbname": "spotify",
+    "user": "spotify",
+    "password": "spotify",
+}
 KAFKA_BOOTSTRAP = "kafka-1:9092"       # Phase 2
 
 TOPICS = {
@@ -95,7 +102,7 @@ class P2PSimulator:
 
         # Connexion Redis
         self.redis = redis.from_url(REDIS_URL, decode_responses=True)
-
+        self.tracks = self._load_catalog()
         # Phase 2 — Kafka producer
         # self.kafka_producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
 
@@ -106,6 +113,49 @@ class P2PSimulator:
         signal.signal(signal.SIGINT, self._shutdown)
 
         logger.info(f"Simulateur démarré | mode={mode} | peers={n_peers} | rate={events_per_second} evt/s")
+    
+    
+    def _load_catalog(self) -> list:
+        import psycopg2
+
+        try:
+            conn = psycopg2.connect(
+                host="localhost",
+                port=5432,
+                dbname="spotify",
+                user="spotify",
+                password="spotify",
+            )
+            cur = conn.cursor()
+
+            cur.execute("""
+                SELECT id, title, duration_ms
+                FROM tracks
+                LIMIT 1000
+            """)
+
+            rows = cur.fetchall()
+            cur.close()
+            conn.close() 
+
+            tracks = [
+                {
+                    "id": str(row[0]),
+                    "title": row[1],
+                    "duration_ms": int(row[2]) if row[2] else 180000,
+                }
+                for row in rows
+            ]
+
+            if tracks:
+                logger.info(f"{len(tracks)} tracks chargés depuis PostgreSQL")
+                return tracks
+
+        except Exception as e:
+            logger.warning(f"Impossible de charger les tracks PostgreSQL : {e}")
+
+        logger.warning("Fallback : utilisation des SAMPLE_TRACKS")
+        return SAMPLE_TRACKS
 
     def run(self):
         """Boucle principale : génère et publie des événements en continu."""
@@ -158,7 +208,7 @@ class P2PSimulator:
         En mode "late_events" (Phase 2) :
             - timestamp décalé de -5 à -30 minutes dans le passé
         """
-        track = random.choice(SAMPLE_TRACKS)
+        track = random.choice(self.tracks)
 
         # TODO : compléter ici
         duration_ms = random.randint(30000, track["duration_ms"])
@@ -207,7 +257,7 @@ class P2PSimulator:
             "cache_miss",
         ])
 
-        track = random.choice(SAMPLE_TRACKS)
+        track = random.choice(self.tracks)
 
         event = {
             "event_id": str(uuid.uuid4()),
@@ -273,10 +323,20 @@ class P2PSimulator:
         Gérer l'exception si Redis est indisponible (log + skip).
         """
         try:
+            # Pub/Sub
             self.redis.publish(channel, payload)
-            logger.info(f"Événement publié dans Redis | channel={channel}")
+
+            # Liste persistante pour Airflow
+            self.redis.lpush(channel, payload)
+
+            logger.info(
+                f"Événement publié dans Redis | channel={channel}"
+            )
+
         except redis.RedisError as e:
-            logger.error(f"Erreur Redis lors de la publication : {e}")
+            logger.error(
+                f"Erreur Redis lors de la publication : {e}"
+            )
 
     # def _publish_to_kafka(self, topic: str, key: str, payload: str):
     #     """
