@@ -15,11 +15,13 @@ Ce document décrit les procédures de diagnostic et de résolution des incident
 **Diagnostic :**
 ```bash
 # Voir les logs de la tâche
+
 docker logs spotify-m1-airflow-worker-1
 
 docker logs spotify-m1-airflow-scheduler-1
 
 # Lister les tâches actives
+
 docker exec airflow-scheduler airflow tasks states-for-dag-run <dag_id> <run_id>
 ```
 
