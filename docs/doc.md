@@ -42,7 +42,7 @@ Les DAGs Airflow Phase 1 restent opérationnels après l'ajout de Kafka.
 
 Issue #12 validée.
 
-## Validation Issue #13 - Spark Kafka Console Reader
+# Validation Issue #13 - Spark Kafka Console Reader
 
 Le cluster Spark est opérationnel avec un master et un worker actif.
 
