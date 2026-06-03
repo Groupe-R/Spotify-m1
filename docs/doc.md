@@ -14,7 +14,7 @@
 
 ## Catalog_updates
 
-![Catalog_updates](screenshots/kafka-Catalog-updates.png)
+![Catalog_updates](screenshots/kafka-catalog-updates.png)
 
 ## Conclusion
 
