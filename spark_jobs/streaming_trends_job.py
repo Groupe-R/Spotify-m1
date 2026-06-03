@@ -109,7 +109,32 @@ def read_kafka_stream(spark: SparkSession):
     Returns:
         DataFrame streaming avec colonnes typées
     """
-    raise NotImplementedError("TODO : implémenter read_kafka_stream()")
+    raw_df = (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
+        .option("subscribe", KAFKA_TOPIC)
+        .option("startingOffsets", "latest")
+        .load()
+    )
+
+    parsed_df = (
+        raw_df
+        .selectExpr("CAST(value AS STRING) as json_value")
+        .select(
+            F.from_json(
+                F.col("json_value"),
+                LISTENING_EVENT_SCHEMA
+            ).alias("event")
+        )
+        .select("event.*")
+        .withColumn(
+            "event_time",
+            F.to_timestamp("timestamp")
+        )
+    )
+
+    return parsed_df
 
 
 # ─────────────────────────────────────────────────────────────
@@ -129,7 +154,15 @@ def compute_top_tracks_tumbling(events_df):
     Hint : pour écrire dans PostgreSQL depuis Spark Streaming,
     utiliser foreachBatch() et df.write.jdbc() dans le batch.
     """
-    raise NotImplementedError("TODO : implémenter compute_top_tracks_tumbling()")
+    query = (
+        events_df.writeStream
+        .format("console")
+        .outputMode("append")
+        .option("truncate", "false")
+        .start()
+    )
+
+    return query
 
 
 def compute_genre_listeners_sliding(events_df, catalog_df):

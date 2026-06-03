@@ -41,3 +41,19 @@ Les DAGs Airflow Phase 1 restent opérationnels après l'ajout de Kafka.
 - DAGs Phase 1 toujours fonctionnels
 
 Issue #12 validée.
+
+## Validation Issue #13 - Spark Kafka Console Reader
+
+Le cluster Spark est opérationnel avec un master et un worker actif.
+
+![Spark Master](docs/screenshots/spark-master.png)
+
+Le job Spark lit le topic Kafka `listening_events` et affiche les événements en console.
+
+![Spark Console](docs/screenshots/spark-console-events.png)
+
+Validation :
+- Spark Master démarré
+- Spark Worker connecté
+- Lecture du topic Kafka `listening_events`
+- Événements JSON visibles dans les logs Spark
