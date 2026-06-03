@@ -2,19 +2,19 @@
 
 ## Brokers
 
-![Brokers](docs/screenshots/kafka-brokers.png)
+![Brokers](screenshots/kafka-brokers.png)
 
 ## Topics
 
-![Topics](docs/screenshots/kafka-topics.png)
+![Topics](screenshots/kafka-topics.png)
 
 ## Listening_events
 
-![Listening Events](docs/screenshots/kafka-listening-events.png)
+![Listening Events](screenshots/kafka-listening-events.png)
 
 ## Catalog_updates
 
-![Catalog_updates](docs/screenshots/kafka-Catalog_updates.png)
+![Catalog_updates](screenshots/kafka-Catalog_updates.png)
 
 ## Conclusion
 
@@ -27,7 +27,7 @@ Le cluster Kafka KRaft est opérationnel et conforme aux critères de validation
 
 Les événements sont publiés en continu dans le topic `listening_events`.
 
-![Kafka Messages](docs/screenshots/kafka-messages.png)
+![Kafka Messages](screenshots/kafka-messages.png)
 
 ## Compatibilité Phase 1
 
@@ -46,11 +46,11 @@ Issue #12 validée.
 
 Le cluster Spark est opérationnel avec un master et un worker actif.
 
-![Spark Master](docs/screenshots/spark-master.png)
+![Spark Master](screenshots/spark-master.png)
 
 Le job Spark lit le topic Kafka `listening_events` et affiche les événements en console.
 
-![Spark Console](docs/screenshots/spark-console-events.png)
+![Spark Console](screenshots/spark-console-events.png)
 
 Validation :
 - Spark Master démarré
