@@ -27,7 +27,7 @@ from typing import Optional
 import redis
 
 # Phase 2 — décommenter quand Kafka est prêt
-# from confluent_kafka import Producer
+from confluent_kafka import Producer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +48,7 @@ POSTGRES_CONFIG = {
     "user": "spotify",
     "password": "spotify",
 }
-KAFKA_BOOTSTRAP = "kafka-1:9092"       # Phase 2
+KAFKA_BOOTSTRAP = "localhost:29092"      # Phase 2
 
 TOPICS = {
     "listening":   "listening_events",
@@ -104,7 +104,11 @@ class P2PSimulator:
         self.redis = redis.from_url(REDIS_URL, decode_responses=True)
         self.tracks = self._load_catalog()
         # Phase 2 — Kafka producer
-        # self.kafka_producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+        self.kafka_producer = Producer({
+            "bootstrap.servers": KAFKA_BOOTSTRAP,
+            "acks": "all",
+            "enable.idempotence": True,
+        })
 
         # Peers actifs simulés
         self.active_peers = [str(uuid.uuid4()) for _ in range(n_peers)]
@@ -313,8 +317,29 @@ class P2PSimulator:
         channel = TOPICS[topic_key]
 
         self._publish_to_redis(channel, payload)
-        # Phase 2 — décommenter
-        # self._publish_to_kafka(channel, event.get("user_id", ""), payload)
+
+        key = event.get("user_id") or event.get("peer_id") or event.get("event_id")
+        self._publish_to_kafka(channel, key, payload)
+        # Phase 2 — décommenter_publish_to_kafka
+    def _delivery_report(self, err, msg):
+        if err is not None:
+            logger.error(f"Erreur Kafka delivery: {err}")
+        else:
+            logger.info(
+                f"Événement publié dans Kafka | topic={msg.topic()} partition={msg.partition()} offset={msg.offset()}"
+            )
+
+    def _publish_to_kafka(self, topic: str, key: str, payload: str):
+        try:
+            self.kafka_producer.produce(
+                topic=topic,
+                key=key,
+                value=payload,
+                callback=self._delivery_report,
+            )
+            self.kafka_producer.poll(0)
+        except Exception as e:
+            logger.error(f"Erreur Kafka lors de la publication : {e}")
 
     def _publish_to_redis(self, channel: str, payload: str):
         """
@@ -350,6 +375,8 @@ class P2PSimulator:
     def _shutdown(self, signum, frame):
         logger.info(f"Arrêt du simulateur (signal {signum}) — {self.event_count} événements publiés")
         self.running = False
+        if hasattr(self, "kafka_producer"):
+            self.kafka_producer.flush(10)
 
 
 # ─────────────────────────────────────────────────────────────
