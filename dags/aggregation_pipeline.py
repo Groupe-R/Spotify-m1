@@ -66,7 +66,7 @@ def _target_date(context) -> str:
     if dag_run and dag_run.conf and dag_run.conf.get("date"):
         return dag_run.conf["date"]
 
-    return context["data_interval_start"].strftime("%Y-%m-%d")
+    return context["data_interval_start"].strftime("%Y-%M-%D")
 
 
 with DAG(
