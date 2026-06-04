@@ -141,3 +141,115 @@ Le cluster Spark reste opérationnel pendant le traitement des événements tard
 ## Conclusion
 
 La gestion des événements tardifs est opérationnelle et conforme aux critères de validation de l'Issue #15.
+
+# Validation Issue #16 - Exactly Once Processing
+
+## Configuration Kafka Producer
+
+Le simulateur Kafka est configuré avec l'idempotence activée afin d'éviter la publication de doublons.
+
+Paramètres utilisés :
+
+- `enable.idempotence = true`
+- `acks = all`
+- `transactional.id = p2p-simulator-1`
+
+![Kafka Producer Idempotence](screenshots/kafka-producer-idempotence.png)
+
+## Configuration Spark Consumer
+
+Le consommateur Spark lit uniquement les messages validés grâce au niveau d'isolation `read_committed`.
+
+![Spark Read Committed](screenshots/spark-read-committed.png)
+
+## Test de redémarrage du job Spark
+
+Le job Spark a été démarré, arrêté puis relancé afin de vérifier que le traitement reprend correctement sans générer de doublons.
+
+![Spark Restart](screenshots/spark-restart.png)
+
+## Vérification PostgreSQL
+
+La vérification des doublons a été effectuée avec la requête suivante :
+
+```sql
+SELECT COUNT(*) - COUNT(DISTINCT id) AS doublons
+FROM listening_events;
+```
+
+Résultat obtenu :
+
+```text
+0
+```
+
+![PostgreSQL Duplicates Check](screenshots/postgres-duplicates-check.png)
+
+## Validation
+
+- Producer Kafka idempotent configuré
+- Consumer Spark configuré en mode `read_committed`
+- Arrêt et redémarrage du job Spark validés
+- Aucun doublon détecté dans PostgreSQL
+
+## Conclusion
+
+La chaîne Kafka → Spark → PostgreSQL respecte le principe d'Exactly Once Processing.
+
+L'Issue #16 est validée.
+
+# Validation Issue #17 - Streaming Enrichment Job
+
+## Enrichissement des événements
+
+Le job `streaming_enrichment_job.py` lit les événements depuis Kafka (`listening_events`) et les enrichit avec le catalogue PostgreSQL (`tracks` et `artists`).
+
+Les événements sont enrichis avec :
+- `track_title`
+- `artist_name`
+- `genre`
+- `artist_country`
+
+![Spark Enrichment Output](screenshots/spark-enrichment-output.png)
+
+## Jointure avec les événements P2P
+
+Le job réalise également une jointure stream-stream entre `listening_events` et `p2p_network_events`, avec un watermark de 2 minutes.
+
+Les champs P2P ajoutés sont :
+- `p2p_event_type`
+- `p2p_peer_id`
+- `p2p_latency_ms`
+
+## Déduplication
+
+Une déduplication est appliquée sur `event_id` afin d'éviter les doublons dans le flux enrichi.
+
+![Deduplication Code](screenshots/deduplication-code.png)
+
+## Écriture Kafka
+
+Les événements enrichis sont publiés dans le topic Kafka `enriched_events`.
+
+![Kafka Enriched Events](screenshots/kafka-enriched-events.png)
+
+## Écriture MinIO Parquet
+
+Les événements enrichis sont également écrits au format Parquet dans MinIO, partitionnés par `date` et `hour`.
+
+![MinIO Enriched Parquet](screenshots/minio-enriched-parquet.png)
+                         (screenshots/minio-enriched-parquet2.png)
+## Validation
+
+- Lecture du topic Kafka `listening_events`
+- Chargement du catalogue PostgreSQL
+- Jointure stream-static avec `tracks` et `artists`
+- Jointure stream-stream avec `p2p_network_events`
+- Watermark de 2 minutes
+- Déduplication par `event_id`
+- Écriture dans Kafka `enriched_events`
+- Écriture Parquet dans MinIO partitionnée par `date/hour`
+
+## Conclusion
+
+Le job `streaming_enrichment_job.py` est opérationnel et conforme aux critères de validation de l'Issue #17.
