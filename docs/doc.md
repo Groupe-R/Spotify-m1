@@ -298,8 +298,6 @@ Type d’alerte généré :
 
 - `p2p_failure_rate`
 
-![PostgreSQL Fraud Detections](screenshots/postgres-fraud-detections.png)
-
 ## Publication Kafka
 
 Les alertes détectées sont publiées dans le topic Kafka :
@@ -321,7 +319,7 @@ Les alertes sont enregistrées dans PostgreSQL avec les champs suivants :
 - `window_end`
 - `detected_at`
 
-![PostgreSQL Fraud Results](screenshots/postgres-fraud-results.png)
+![PostgreSQL Fraud Detections](screenshots/postgres-fraud-detections.png)
 
 ## Validation
 
