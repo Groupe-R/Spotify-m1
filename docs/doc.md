@@ -238,7 +238,7 @@ Les événements enrichis sont publiés dans le topic Kafka `enriched_events`.
 Les événements enrichis sont également écrits au format Parquet dans MinIO, partitionnés par `date` et `hour`.
 
 ![MinIO Enriched Parquet](screenshots/minio-enriched-parquet.png)
-                         (screenshots/minio-enriched-parquet2.png)
+![MinIO Enriched Parquet](screenshots/minio-enriched-parquet2.png)
 ## Validation
 
 - Lecture du topic Kafka `listening_events`
