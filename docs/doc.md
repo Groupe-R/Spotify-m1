@@ -253,3 +253,89 @@ Les événements enrichis sont également écrits au format Parquet dans MinIO, 
 ## Conclusion
 
 Le job `streaming_enrichment_job.py` est opérationnel et conforme aux critères de validation de l'Issue #17.
+<<<<<<< HEAD
+=======
+
+# Validation Issue #18 - Fraud Detection Job
+
+## Détection de fraude en temps réel
+
+Le job `fraud_detection_job.py` consomme les événements depuis Kafka :
+
+- `listening_events`
+- `p2p_network_events`
+
+Le traitement est réalisé avec Spark Structured Streaming afin de détecter les comportements frauduleux en temps réel.
+
+![Spark Fraud Detection Output](screenshots/fraud-detection-output.png)
+
+## Règle 1 — Burst Listening
+
+Le job détecte les utilisateurs ayant un nombre anormalement élevé d’écoutes sur une fenêtre de 10 minutes.
+
+Type d’alerte généré :
+
+- `burst_listening`
+
+![Burst Listening](screenshots/burst-listening.png)
+
+## Règle 2 — Short Duration Bot
+
+Le job détecte les utilisateurs ayant plusieurs écoutes très courtes, avec une durée moyenne inférieure à 5 secondes sur une fenêtre d’une heure.
+
+Type d’alerte généré :
+
+- `short_duration_bot`
+
+
+![Short Duration Bot Alert](screenshots/short-duration-bot-alert.png)
+
+## Règle 3 — P2P Failure Rate
+
+Le job analyse les événements P2P et détecte les peers ayant un taux d’échec de transfert supérieur à 50 % sur une fenêtre de 15 minutes.
+
+Type d’alerte généré :
+
+- `p2p_failure_rate`
+
+![PostgreSQL Fraud Detections](screenshots/postgres-fraud-detections.png)
+
+## Publication Kafka
+
+Les alertes détectées sont publiées dans le topic Kafka :
+
+- `fraud_alerts`
+
+![Kafka Fraud Alerts](screenshots/kafka-fraud-alerts.png)
+
+## Écriture PostgreSQL
+
+Les alertes sont enregistrées dans PostgreSQL avec les champs suivants :
+
+- `user_id`
+- `peer_id`
+- `fraud_type`
+- `suspicion_score`
+- `evidence`
+- `window_start`
+- `window_end`
+- `detected_at`
+
+![PostgreSQL Fraud Results](screenshots/postgres-fraud-results.png)
+
+## Validation
+
+- Activation du simulateur en mode fraud
+- Lecture des topics Kafka `listening_events` et `p2p_network_events`
+- Détection des fraudes `burst_listening`
+- Détection des fraudes `short_duration_bot`
+- Détection des fraudes `p2p_failure_rate`
+- Publication des alertes dans Kafka `fraud_alerts`
+- Enregistrement des alertes dans PostgreSQL
+
+## Conclusion
+
+Le job `fraud_detection_job.py` est opérationnel et conforme aux critères de validation de l’Issue #18.
+
+Les alertes de fraude sont correctement détectées en temps réel, publiées dans Kafka et persistées dans PostgreSQL.
+>>>>>>> f56d30c (feat(issue-18): implement real-time fraud detection streaming job)

@@ -99,7 +99,7 @@ class P2PSimulator:
         self.mode = mode
         self.running = True
         self.event_count = 0
-
+        self.fraud_user = SAMPLE_USERS[0]
         # Connexion Redis
         self.redis = redis.from_url(REDIS_URL, decode_responses=True)
         self.tracks = self._load_catalog()
@@ -108,7 +108,11 @@ class P2PSimulator:
             "bootstrap.servers": KAFKA_BOOTSTRAP,
             "acks": "all",
             "enable.idempotence": True,
+            "transactional.id": f"p2p-simulator-{uuid.uuid4()}",
+            "client.id": "p2p_simulator",
         })
+
+        self.kafka_producer.init_transactions()
 
         # Peers actifs simulés
         self.active_peers = [str(uuid.uuid4()) for _ in range(n_peers)]
@@ -219,7 +223,7 @@ class P2PSimulator:
 
         event = {
             "event_id": str(uuid.uuid4()),
-            "user_id": random.choice(SAMPLE_USERS),
+            "user_id": self.fraud_user if self.mode == "fraud" and random.random() < 0.7 else random.choice(SAMPLE_USERS),
             "track_id": track["id"],
             "source_peer": random.choice(self.active_peers),
             "timestamp": datetime.utcnow().isoformat() + "Z",
@@ -288,6 +292,8 @@ class P2PSimulator:
             event["source_peer"] = random.choice(self.active_peers)
             event["target_peer"] = random.choice(self.active_peers)
             event["chunk_size_kb"] = random.randint(64, 1024)
+            failure_prob = 0.6 if self.mode == "fraud" else 0.05
+            event["status"] = "failed" if random.random() < failure_prob else "success"
 
         elif event_type == "cache_hit":
             event["cache_status"] = "hit"
@@ -331,15 +337,27 @@ class P2PSimulator:
 
     def _publish_to_kafka(self, topic: str, key: str, payload: str):
         try:
+            self.kafka_producer.begin_transaction()
+
             self.kafka_producer.produce(
                 topic=topic,
                 key=key,
                 value=payload,
                 callback=self._delivery_report,
             )
+
             self.kafka_producer.poll(0)
+            self.kafka_producer.commit_transaction()
+
+        except BufferError:
+            self.kafka_producer.poll(0.5)
+
         except Exception as e:
-            logger.error(f"Erreur Kafka lors de la publication : {e}")
+            logger.error(f"Erreur Kafka transaction : {e}")
+            try:
+                self.kafka_producer.abort_transaction()
+            except Exception:
+                pass
 
     def _publish_to_redis(self, channel: str, payload: str):
         """
@@ -352,7 +370,7 @@ class P2PSimulator:
             self.redis.publish(channel, payload)
 
             # Liste persistante pour Airflow
-            self.redis.lpush(channel, payload)
+            self.redis.lpush(channel + "_list", payload)
 
             logger.info(
                 f"Événement publié dans Redis | channel={channel}"
