@@ -336,4 +336,3 @@ Les alertes sont enregistrées dans PostgreSQL avec les champs suivants :
 Le job `fraud_detection_job.py` est opérationnel et conforme aux critères de validation de l’Issue #18.
 
 Les alertes de fraude sont correctement détectées en temps réel, publiées dans Kafka et persistées dans PostgreSQL.
->>>>>>> f56d30c (feat(issue-18): implement real-time fraud detection streaming job)
