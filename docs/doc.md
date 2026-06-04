@@ -336,3 +336,99 @@ Les alertes sont enregistrées dans PostgreSQL avec les champs suivants :
 Le job `fraud_detection_job.py` est opérationnel et conforme aux critères de validation de l’Issue #18.
 
 Les alertes de fraude sont correctement détectées en temps réel, publiées dans Kafka et persistées dans PostgreSQL.
+
+
+# Validation Issue #19 - Reconciliation Pipeline
+
+## Réconciliation Batch / Streaming
+
+Le DAG `reconciliation_pipeline.py` compare les agrégats produits par :
+
+* `daily_streams`
+* `realtime_top_tracks`
+
+Le traitement est réalisé quotidiennement afin de vérifier la cohérence entre la Batch Layer et la Speed Layer de l’architecture Lambda.
+
+## Comparaison des agrégats
+
+Le pipeline récupère les données agrégées de :
+
+* `daily_streams` (Batch Layer)
+* `realtime_top_tracks` (Speed Layer)
+
+Les données sont regroupées par :
+
+* `track_id`
+
+afin de comparer les volumes calculés par les deux couches.
+
+![Batch Streaming Comparison](screenshots/batch-streaming-comparison.png)
+
+## Calcul du taux de divergence
+
+Pour chaque morceau, le pipeline calcule le taux de divergence entre les résultats Batch et Streaming.
+
+Formule utilisée :
+
+```text
+abs(batch_streams - realtime_streams) / max(batch_streams, realtime_streams)
+```
+
+Le taux de divergence est enregistré pour chaque track analysé.
+
+![Divergence Calculation](screenshots/divergence-calculation.png)
+![Divergence Calculation](screenshots/divergence-calculation1.png)
+
+## Génération du rapport de réconciliation
+
+Les résultats sont enregistrés dans PostgreSQL dans la table :
+
+* `reconciliation_report`
+
+Les informations stockées sont :
+
+* `track_id`
+* `batch_streams`
+* `realtime_streams`
+* `divergence_pct`
+* `alert`
+* `created_at`
+
+![Reconciliation Report](screenshots/reconciliation-report.png)
+
+## Détection des anomalies
+
+Une alerte est générée lorsqu'une divergence supérieure à 5 % est détectée entre les résultats Batch et Streaming.
+
+Condition utilisée :
+
+```text
+divergence > 5%
+```
+
+Les alertes sont enregistrées dans le rapport et affichées dans les logs Airflow.
+
+![Reconciliation Alerts](screenshots/reconciliation-alerts.png)
+
+## Écriture PostgreSQL
+
+Le rapport de réconciliation est enregistré dans PostgreSQL pour permettre le suivi des écarts entre les deux couches de traitement.
+
+![PostgreSQL Reconciliation Results](screenshots/postgres-reconciliation-results.png)
+
+## Validation
+
+* Lecture des agrégats Batch depuis `daily_streams`
+* Lecture des agrégats Streaming depuis `realtime_top_tracks`
+* Comparaison des volumes par `track_id`
+* Calcul du taux de divergence
+* Génération du rapport de réconciliation
+* Stockage des résultats dans PostgreSQL
+* Détection des divergences supérieures à 5 %
+* Génération des alertes dans les logs Airflow
+
+## Conclusion
+
+Le DAG `reconciliation_pipeline.py` est opérationnel et conforme aux critères de validation de l’Issue #19.
+
+Les écarts entre la Batch Layer et la Speed Layer sont correctement détectés, enregistrés dans PostgreSQL et signalés lorsqu’ils dépassent le seuil de 5 %.
