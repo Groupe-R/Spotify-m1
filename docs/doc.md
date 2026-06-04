@@ -210,8 +210,6 @@ Les événements sont enrichis avec :
 - `genre`
 - `artist_country`
 
-![Spark Enrichment Output](screenshots/spark-enrichment-output.png)
-
 ## Jointure avec les événements P2P
 
 Le job réalise également une jointure stream-stream entre `listening_events` et `p2p_network_events`, avec un watermark de 2 minutes.
@@ -220,6 +218,8 @@ Les champs P2P ajoutés sont :
 - `p2p_event_type`
 - `p2p_peer_id`
 - `p2p_latency_ms`
+
+![Spark Enrichment Output](screenshots/spark-enrichment-output.png)
 
 ## Déduplication
 
