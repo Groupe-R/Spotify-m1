@@ -52,6 +52,7 @@ KAFKA_BOOTSTRAP = "localhost:29092"      # Phase 2
 
 TOPICS = {
     "listening":   "listening_events",
+    "late_events": "late_listening_events",
     "p2p_network": "p2p_network_events",
 }
 
@@ -172,9 +173,15 @@ class P2PSimulator:
         while self.running:
             try:
                 # Alterner listening et réseau P2P (80% / 20%)
-                if random.random() < 0.8:
+                
+                if self.mode == "late_events":
+                    event = self._generate_listening_event()
+                    self._publish_event("late_events", event)
+
+                elif random.random() < 0.8:
                     event = self._generate_listening_event()
                     self._publish_event("listening", event)
+
                 else:
                     event = self._generate_p2p_network_event()
                     self._publish_event("p2p_network", event)
