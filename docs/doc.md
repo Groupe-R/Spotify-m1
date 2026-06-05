@@ -432,3 +432,100 @@ Le rapport de réconciliation est enregistré dans PostgreSQL pour permettre le 
 Le DAG `reconciliation_pipeline.py` est opérationnel et conforme aux critères de validation de l’Issue #19.
 
 Les écarts entre la Batch Layer et la Speed Layer sont correctement détectés, enregistrés dans PostgreSQL et signalés lorsqu’ils dépassent le seuil de 5 %.
+
+# Validation Issue #20 - Late Events Reprocessing
+
+## Retraitement des événements tardifs
+
+Le DAG `late_events_reprocessing.py` permet de consommer les événements d’écoute tardifs détectés par Spark Streaming et routés vers le topic Kafka :
+
+* `late_listening_events`
+
+Le traitement est exécuté de manière horaire afin de réintégrer les événements rejetés par la Speed Layer et garantir la cohérence des données dans l’architecture Lambda.
+
+## Consommation des Late Events
+
+Le pipeline consomme les messages présents dans le topic Kafka :
+
+* `late_listening_events`
+
+Les événements sont récupérés via un consommateur Kafka dédié et validés avant leur insertion dans PostgreSQL.
+
+![Late Events Kafka Topic](screenshots/late-events-kafka-topic.png)
+
+## Validation des événements
+
+Chaque événement reçu est contrôlé afin de vérifier :
+
+* La présence des champs obligatoires
+* La validité du `track_id`
+* La cohérence des données reçues
+* L'absence de doublons grâce à la gestion des conflits PostgreSQL
+
+Les événements invalides sont ignorés afin de préserver l'intégrité des données.
+
+## Réintégration dans PostgreSQL
+
+Les événements validés sont réinsérés dans la table :
+
+* `listening_events`
+
+L'insertion utilise une stratégie d'idempotence afin d'éviter les doublons :
+
+```text
+ON CONFLICT (id) DO NOTHING
+```
+
+Le nombre d'événements réintégrés est affiché dans les logs Airflow.
+
+## Recalcul des agrégats
+
+Après la réintégration des événements, le DAG identifie les dates impactées puis recalcule les agrégats dans :
+
+* `daily_streams`
+
+Les statistiques recalculées incluent :
+
+* `total_streams`
+* `unique_listeners`
+* `total_duration_ms`
+* `countries`
+
+![Daily Streams Recalculation](screenshots/daily-streams-recalculation.png)
+
+## Mise à jour PostgreSQL
+
+Les nouveaux agrégats sont enregistrés dans PostgreSQL afin de maintenir la cohérence entre les données historiques et les événements tardifs réintégrés.
+
+Le recalcul est effectué uniquement sur les dates concernées afin d'optimiser les performances.
+
+![Daily Streams PostgreSQL](screenshots/daily-streams-postgresql.png)
+
+## Exécution Airflow
+
+Le DAG est composé des tâches suivantes :
+
+* `consume_and_insert_late_events`
+* `recalculate_aggregates`
+
+Les deux tâches sont exécutées avec succès dans Airflow.
+
+![Airflow DAG Success](screenshots/airflow-late-events-success.png)
+
+## Validation
+
+* Consommation du topic Kafka `late_listening_events`
+* Validation des événements tardifs
+* Réintégration des événements dans `listening_events`
+* Insertion des événements dans PostgreSQL
+* Recalcul des agrégats impactés
+* Mise à jour de la table `daily_streams`
+* Exécution réussie du DAG dans Airflow
+* Synchronisation entre la Speed Layer et la Batch Layer
+
+## Conclusion
+
+Le DAG `late_events_reprocessing.py` est opérationnel et conforme aux critères de validation de l’Issue #20.
+
+Les événements tardifs détectés par Spark sont correctement consommés depuis Kafka, réintégrés dans PostgreSQL et pris en compte dans les agrégats de la Batch Layer, garantissant la cohérence globale de l’architecture Lambda.
+
