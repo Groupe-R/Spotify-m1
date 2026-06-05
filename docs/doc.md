@@ -491,7 +491,6 @@ Les statistiques recalculées incluent :
 * `total_duration_ms`
 * `countries`
 
-![Daily Streams Recalculation](screenshots/daily-streams-recalculation.png)
 
 ## Mise à jour PostgreSQL
 
