@@ -24,6 +24,7 @@ TODO :
 """
 
 import os
+from pyspark.sql import Window
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
@@ -109,7 +110,33 @@ def read_kafka_stream(spark: SparkSession):
     Returns:
         DataFrame streaming avec colonnes typées
     """
-    raise NotImplementedError("TODO : implémenter read_kafka_stream()")
+    raw_df = (
+        spark.readStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
+        .option("subscribe", KAFKA_TOPIC)
+        .option("kafka.isolation.level", "read_committed")
+        .option("startingOffsets", "latest")
+        .load()
+    )
+
+    parsed_df = (
+        raw_df
+        .selectExpr("CAST(value AS STRING) as json_value")
+        .select(
+            F.from_json(
+                F.col("json_value"),
+                LISTENING_EVENT_SCHEMA
+            ).alias("event")
+        )
+        .select("event.*")
+        .withColumn(
+            "event_time",
+            F.to_timestamp("timestamp")
+        )
+    )
+
+    return parsed_df
 
 
 # ─────────────────────────────────────────────────────────────
@@ -129,7 +156,90 @@ def compute_top_tracks_tumbling(events_df):
     Hint : pour écrire dans PostgreSQL depuis Spark Streaming,
     utiliser foreachBatch() et df.write.jdbc() dans le batch.
     """
-    raise NotImplementedError("TODO : implémenter compute_top_tracks_tumbling()")
+    events_df_watermarked = events_df.withWatermark("event_time", "10 minutes")
+
+    grouped_df = (
+            events_df_watermarked
+            .filter(F.col("track_id").isNotNull())
+            .filter(F.col("event_time").isNotNull())
+            .groupBy(F.window("event_time", "5 minutes"), "track_id")
+            .agg(
+                F.count("*").alias("stream_count"),
+                F.approx_count_distinct("user_id").alias("unique_listeners")
+            )
+            .select(
+                F.col("window.start").alias("window_start"),
+                F.col("window.end").alias("window_end"),
+                F.col("track_id"),
+                F.col("stream_count"),
+                F.col("unique_listeners")
+            )
+        )
+
+    def write_to_postgres(batch_df, batch_id):
+            if batch_df.rdd.isEmpty():
+                print(f"[Batch {batch_id}] Aucun événement.")
+                return
+
+            staging_table = f"staging_realtime_top_tracks_{batch_id}"
+
+            batch_df.write \
+                .format("jdbc") \
+                .option("url", POSTGRES_URL) \
+                .option("dbtable", staging_table) \
+                .option("user", POSTGRES_PROPS["user"]) \
+                .option("password", POSTGRES_PROPS["password"]) \
+                .option("driver", POSTGRES_PROPS["driver"]) \
+                .mode("overwrite") \
+                .save()
+
+            spark = batch_df.sparkSession
+            jvm = spark._jvm
+
+            upsert_sql = f"""
+                INSERT INTO realtime_top_tracks
+                    (window_start, window_end, track_id, stream_count, unique_listeners, updated_at)
+                SELECT
+                    window_start,
+                    window_end,
+                    CAST(track_id AS UUID),
+                    stream_count,
+                    unique_listeners,
+                    NOW()
+                FROM {staging_table}
+                ON CONFLICT (window_start, track_id)
+                DO UPDATE SET
+                    window_end = EXCLUDED.window_end,
+                    stream_count = EXCLUDED.stream_count,
+                    unique_listeners = EXCLUDED.unique_listeners,
+                    updated_at = NOW();
+            """
+
+            drop_sql = f"DROP TABLE IF EXISTS {staging_table};"
+
+            conn = jvm.java.sql.DriverManager.getConnection(
+                POSTGRES_URL,
+                POSTGRES_PROPS["user"],
+                POSTGRES_PROPS["password"]
+            )
+
+            try:
+                stmt = conn.createStatement()
+                stmt.execute(upsert_sql)
+                stmt.execute(drop_sql)
+                stmt.close()
+                print(f"[Batch {batch_id}] Données écrites dans realtime_top_tracks.")
+            finally:
+                conn.close()
+
+    return (
+            grouped_df.writeStream
+            .outputMode("update")
+            .foreachBatch(write_to_postgres)
+            .option("checkpointLocation", CHECKPOINT_PATH + "/top_tracks")
+            .trigger(processingTime="30 seconds")
+            .start()
+        )
 
 
 def compute_genre_listeners_sliding(events_df, catalog_df):
@@ -161,18 +271,26 @@ def main():
     print(f"Kafka : {KAFKA_BOOTSTRAP} → topic : {KAFKA_TOPIC}")
     print(f"Checkpoint : {CHECKPOINT_PATH}")
 
-    # Lecture Kafka
     events_df = read_kafka_stream(spark)
+    late_events_df = events_df.filter(
+        F.col("event_time") < F.current_timestamp() - F.expr("INTERVAL 10 minutes")
+    )
 
-    # Chargement du catalogue (jointure statique — Phase 2, seq 2.3)
-    # catalog_df = spark.read.jdbc(POSTGRES_URL, "tracks", properties=POSTGRES_PROPS)
+    query_late_events = (
+        late_events_df
+        .selectExpr("CAST(event_id AS STRING) AS key", "to_json(struct(*)) AS value")
+        .writeStream
+        .format("kafka")
+        .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP)
+        .option("topic", "late_listening_events")
+        .option("checkpointLocation", CHECKPOINT_PATH + "/late_events")
+        .start()
+    )
 
-    # Agrégations
     query_top_tracks = compute_top_tracks_tumbling(events_df)
-    # query_genres     = compute_genre_listeners_sliding(events_df, catalog_df)
 
-    # Attendre l'arrêt gracieux
     spark.streams.awaitAnyTermination()
+
 
 
 if __name__ == "__main__":

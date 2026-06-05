@@ -1,11 +1,12 @@
 # RUNBOOK SPOTIFY — Procédures incidents
 
-> Ce document doit être complété par votre groupe au fur et à mesure de la semaine.
-> Un bon runbook = ce dont vous auriez eu besoin pendant la panne.
+## Objectif
+
+Ce document décrit les procédures de diagnostic et de résolution des incidents les plus fréquents sur la plateforme Spotify Data Platform.
 
 ---
 
-## Incidents Phase 1 — Airflow / Batch
+## Incidents Phase 1 — Airflow, PostgreSQL et MinIO
 
 ### INC-01 — DAG bloqué en "running" depuis > 30 minutes
 
@@ -14,9 +15,13 @@
 **Diagnostic :**
 ```bash
 # Voir les logs de la tâche
-docker compose logs airflow-worker -f
+
+docker logs spotify-m1-airflow-worker-1
+
+docker logs spotify-m1-airflow-scheduler-1
 
 # Lister les tâches actives
+
 docker exec airflow-scheduler airflow tasks states-for-dag-run <dag_id> <run_id>
 ```
 
@@ -29,7 +34,11 @@ docker exec airflow-scheduler airflow tasks clear <dag_id> -t <task_id> --yes
 docker compose restart airflow-worker
 ```
 
-**Cause probable :** → À compléter par votre groupe après avoir rencontré cet incident
+**Cause probable :** 
+
+- Tâche bloquée sur une requête PostgreSQL
+- Service PostgreSQL indisponible
+- Worker Airflow arrêté
 
 ---
 
@@ -40,7 +49,9 @@ docker compose restart airflow-worker
 **Diagnostic :**
 ```sql
 SELECT count(*), state FROM pg_stat_activity GROUP BY state;
-SELECT max_conn FROM pg_settings WHERE name='max_connections';
+SELECT setting
+FROM pg_settings
+WHERE name = 'max_connections';
 ```
 
 **Résolution :**
@@ -52,7 +63,11 @@ SELECT max_conn FROM pg_settings WHERE name='max_connections';
 # SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE state='idle';
 ```
 
-**Prévention :** → À compléter (hint : Airflow pools)
+**Prévention :** 
+
+- Limiter le parallélisme Airflow
+- Fermer correctement les connexions PostgreSQL
+- Utiliser des pools Airflow pour limiter le nombre de tâches simultanées
 
 ---
 
@@ -64,6 +79,8 @@ SELECT max_conn FROM pg_settings WHERE name='max_connections';
 ```bash
 docker compose ps minio
 curl http://localhost:9000/minio/health/live
+
+docker logs spotify-m1-airflow-worker-1
 ```
 
 **Résolution :**
@@ -71,8 +88,36 @@ curl http://localhost:9000/minio/health/live
 docker compose restart minio
 # Attendre 10s puis relancer le DAGRun
 ```
+## Vérification générale de la plateforme
 
+### Vérifier les conteneurs
+
+```bash
+docker ps
+```
+
+### Vérifier Airflow
+
+http://localhost:8080/
+
+### Vérifier les tests:
+
+```bash
+python3 -m pytest tests/unit/test_transformations.py -v
+```
 ---
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Incidents Phase 2 — Kafka / Spark
 
